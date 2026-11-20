@@ -128,13 +128,15 @@ export async function voice() {
 }
 
 // ---------- weighted realistic user mix (plan section 4) ----------
+// AI_WEIGHT scales the AI share: 1 = realistic mix, 0 = web/API only (finds the non-AI ceiling), 2 = AI-heavy
+const AI_W = parseFloat(__ENV.AI_WEIGHT ?? '1');
 const MIX = [
   [15, browseHome], [15, browseList], [20, browseProduct], [10, search],   // 60% browse
   [15, placeOrder], [5, myOrders],                                          // 20% write
   [10, chatSession],                                                        // 10% real-time chat
-  [4, aiAsk], [3, aiChat],                                                  //  7% AI chat
-  [3, voice],                                                               //  3% voice
-];
+  [4 * AI_W, aiAsk], [3 * AI_W, aiChat],                                    //  7% AI chat
+  [3 * AI_W, voice],                                                        //  3% voice
+].filter(([w]) => w > 0);
 const TOTAL = MIX.reduce((s, [w]) => s + w, 0);
 export async function mixedUser() {
   let r = Math.random() * TOTAL;
