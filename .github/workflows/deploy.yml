@@ -1,0 +1,51 @@
+# Manual deploy to a test server: copies the kit, pulls the images CI built, restarts services one by one.
+# One-time setup (GitHub repo -> Settings -> Secrets and variables -> Actions):
+#   DEPLOY_SSH_KEY   private key whose public key is in the server's /root/.ssh/authorized_keys
+#   GHCR_READ_TOKEN  (only if the packages are private) a token with read:packages, used by the server to pull images
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:  { description: "Server public IP", required: true }
+      tier:  { description: "Tier (1c/2c/4c/8c)", required: true, default: "8c" }
+      tag:   { description: "Image tag (latest or a commit SHA)", required: true, default: "latest" }
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH setup
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "${{ inputs.host }}" >> ~/.ssh/known_hosts
+      - name: Copy kit
+        run: |
+          rsync -az --delete -e "ssh -i ~/.ssh/id_deploy" \
+            --exclude .git --exclude models --exclude .env --exclude node_modules --exclude .next \
+            ./ root@${{ inputs.host }}:/opt/uvbench/
+      - name: Pull images and roll services
+        env:
+          OWNER: ${{ github.repository_owner }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+        run: |
+          OWNER=${OWNER,,}
+          ssh -i ~/.ssh/id_deploy root@${{ inputs.host }} \
+            "OWNER=$OWNER TAG=${{ inputs.tag }} TIER=${{ inputs.tier }} GHCR_READ_TOKEN='$GHCR_READ_TOKEN' bash -s" <<'EOF'
+          set -euo pipefail
+          cd /opt/uvbench
+          [ -n "$GHCR_READ_TOKEN" ] && echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u "$OWNER" --password-stdin
+          if [ ! -f .env ]; then bash scripts/bootstrap-target.sh "$TIER"; fi
+          sed -i "s#^IMAGE_PREFIX=.*#IMAGE_PREFIX=ghcr.io/$OWNER/uvbench#; s#^IMAGE_TAG=.*#IMAGE_TAG=$TAG#" .env
+          DC="docker compose --env-file .env -f compose/docker-compose.yml"
+          $DC pull -q
+          # one service at a time; nginx retries the other upstream while a container restarts
+          for svc in stt tts worker api web nginx; do $DC up -d --no-deps --no-build "$svc"; sleep 5; done
+          $DC ps --format 'table {{.Service}}\t{{.Status}}'
+          curl -fs http://127.0.0.1/api/health
+          EOF

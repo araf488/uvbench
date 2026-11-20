@@ -1,0 +1,29 @@
+# Recording rules: the numbers the final report is built from (per tier, 1-minute resolution).
+groups:
+  - name: uvbench
+    interval: 1m
+    rules:
+      - record: tier:cpu_used:ratio
+        expr: 1 - avg by (tier) (rate(node_cpu_seconds_total{job="node",mode="idle"}[2m]))
+      - record: tier:cpu_steal:ratio
+        expr: avg by (tier) (rate(node_cpu_seconds_total{job="node",mode="steal"}[2m]))
+      - record: tier:mem_used:ratio
+        expr: 1 - avg by (tier) (node_memory_MemAvailable_bytes{job="node"} / node_memory_MemTotal_bytes{job="node"})
+      - record: tier:swap_used:bytes
+        expr: sum by (tier) (node_memory_SwapTotal_bytes{job="node"} - node_memory_SwapFree_bytes{job="node"})
+      - record: tier:http_requests:rate1m
+        expr: sum by (tier) (rate(uvbench_http_request_duration_seconds_count[1m]))
+      - record: tier:http_errors:ratio
+        expr: >
+          sum by (tier) (rate(uvbench_http_request_duration_seconds_count{status=~"5.."}[5m]))
+          / clamp_min(sum by (tier) (rate(uvbench_http_request_duration_seconds_count[5m])), 1e-9)
+      - record: tier:api_latency:p95
+        expr: histogram_quantile(0.95, sum by (le, tier) (rate(uvbench_http_request_duration_seconds_bucket{route!~"/ai/.*|/ws/.*"}[5m])))
+      - record: tier:ai_stage:p95
+        expr: histogram_quantile(0.95, sum by (le, tier, kind, stage) (rate(uvbench_ai_stage_seconds_bucket[5m])))
+      - record: tier:stt_rtf:p50
+        expr: histogram_quantile(0.5, sum by (le, tier) (rate(stt_realtime_factor_bucket[5m])))
+      - record: tier:cost_per_1k_requests:usd
+        expr: >
+          max by (tier) (uvbench_cost_per_hour_usd)
+          / clamp_min(tier:http_requests:rate1m * 3600, 1e-9) * 1000

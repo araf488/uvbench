@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the UVBench spike test every 6 hours
+
+[Timer]
+OnCalendar=*-*-* 01,07,13,19:30:00 UTC
+Persistent=false
+
+[Install]
+WantedBy=timers.target

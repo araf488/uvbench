@@ -1,0 +1,23 @@
+{
+  "name": "uvbench-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/server.js",
+    "worker": "node src/worker.js",
+    "seed:docs": "node src/seed-docs.js",
+    "check": "node --check src/server.js && node --check src/worker.js && node --check src/seed-docs.js && node --check src/app.js && node --check src/ai.js && node --check src/config.js && node --check src/metrics.js && node --check src/queue.js && node --check src/db.js"
+  },
+  "dependencies": {
+    "@fastify/jwt": "10.2.8",
+    "@fastify/multipart": "10.1.9",
+    "@fastify/websocket": "11.3.7",
+    "bullmq": "5.81.5",
+    "fastify": "5.12.8",
+    "ioredis": "5.11.1",
+    "pg": "8.23.1",
+    "prom-client": "15.1.3"
+  }
+}

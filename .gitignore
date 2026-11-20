@@ -1,0 +1,13 @@
+node_modules/
+.next/
+models/
+.env
+*.part
+loadtest/audio/*.wav
+loadtest/audio/clips.json
+monitoring/.env
+monitoring/prometheus/targets/
+monitoring/prometheus/ci.yml
+monitoring/grafana/dashboards/*.json
+!monitoring/grafana/dashboards/uvbench-overview.json
+__pycache__/

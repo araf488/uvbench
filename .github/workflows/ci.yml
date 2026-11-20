@@ -1,0 +1,111 @@
+# CI: test everything on every push / PR; on main, build the 4 app images and push them to GitHub Container Registry.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API integration test (Postgres + Redis + mocked AI)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env: { POSTGRES_USER: bench, POSTGRES_PASSWORD: bench, POSTGRES_DB: bench }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U bench" --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: bench
+      PGPASSWORD: bench
+      PGDATABASE: bench
+      REDIS_URL: redis://127.0.0.1:6379
+    defaults: { run: { working-directory: app/api } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: app/api/package-lock.json }
+      - run: npm ci
+      - run: npm run check
+      - run: bash test/integration.sh
+
+  web:
+    name: Next.js build
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: app/web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: app/web/package-lock.json }
+      - run: npm ci
+      - run: npm run build
+        env: { NEXT_TELEMETRY_DISABLED: "1" }
+
+  static:
+    name: Scripts, configs, load tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax
+        run: python3 -m py_compile ai/stt/app.py ai/tts/app.py scripts/export-results.py monitoring/grafana/make_dashboard.py
+      - name: Shell syntax
+        run: for f in scripts/*.sh loadtest/*.sh app/api/test/*.sh; do bash -n "$f" || exit 1; done
+      - name: Compose config (every tier)
+        run: |
+          for t in 1c 2c 4c 8c; do
+            { cat tiers/common.env tiers/$t.env; printf 'PRIVATE_IP=10.0.0.2\nDB_PASSWORD=x\nJWT_SECRET=y\n'; } > /tmp/$t.env
+            docker compose --env-file /tmp/$t.env -f compose/docker-compose.yml config -q && echo "compose $t ok"
+          done
+      - name: Prometheus config + rules
+        run: |
+          sed 's#/etc/prometheus/rules.yml#rules.yml#' monitoring/prometheus/prometheus.yml > monitoring/prometheus/ci.yml
+          docker run --rm -v "$PWD/monitoring/prometheus:/p" -w /p --entrypoint promtool prom/prometheus:v2.55.1 check config ci.yml
+      - uses: grafana/setup-k6-action@v1
+      - name: k6 scripts parse
+        run: |
+          cd loadtest
+          for p in smoke ladder steady spike soak diurnal; do k6 inspect -e PROFILE=$p mixed.js > /dev/null && echo "k6 $p ok"; done
+          for k in chat ask voice; do k6 inspect -e KIND=$k ai.js > /dev/null && echo "k6 ai-$k ok"; done
+
+  images:
+    name: Build & push images
+    needs: [api, web, static]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        svc: [api, web, stt, tts]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - id: ctx
+        run: |
+          case "${{ matrix.svc }}" in api) echo "dir=app/api" ;; web) echo "dir=app/web" ;; *) echo "dir=ai/${{ matrix.svc }}" ;; esac >> "$GITHUB_OUTPUT"
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ steps.ctx.outputs.dir }}
+          push: true
+          tags: |
+            ghcr.io/${{ steps.ctx.outputs.owner }}/uvbench/${{ matrix.svc }}:latest
+            ghcr.io/${{ steps.ctx.outputs.owner }}/uvbench/${{ matrix.svc }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.svc }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.svc }}

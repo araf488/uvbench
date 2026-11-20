@@ -1,0 +1,16 @@
+# 24/7 background load on the reference instance: one 24 h diurnal cycle per run, restarted forever.
+# Configure in /etc/uvbench/loadgen.env:  CONT_TIER=8c  CONT_TARGET=10.x.x.x  CONT_PEAK_VUS=300
+[Unit]
+Description=UVBench continuous 24/7 load (diurnal curve)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/uvbench/loadgen.env
+ExecStart=/bin/bash /opt/uvbench/loadtest/run.sh ${CONT_TIER} ${CONT_TARGET} diurnal -e PEAK_VUS=${CONT_PEAK_VUS}
+Restart=always
+RestartSec=30
+LimitNOFILE=1000000
+
+[Install]
+WantedBy=multi-user.target

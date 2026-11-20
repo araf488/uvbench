@@ -1,0 +1,8 @@
+[Unit]
+Description=UVBench spike test (5x for 2 minutes) on top of the continuous load
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/uvbench/loadgen.env
+ExecStart=/bin/bash /opt/uvbench/loadtest/run.sh ${CONT_TIER} ${CONT_TARGET} spike -e VUS=${SPIKE_BASE_VUS}
+LimitNOFILE=1000000
