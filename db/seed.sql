@@ -15,7 +15,7 @@ SELECT 'SKU-' || g,
        'Reliable ' || (ARRAY['wireless','compact','durable','fast','quiet','portable'])[1 + g % 6] ||
        ' device with ' || (ARRAY['long battery life','warranty support','fast charging','HD display','low latency','smart features'])[1 + g % 6] ||
        '. Model year ' || (2018 + g % 9) || '.',
-       500 + (g * 7919) % 200000,
+       500 + (g::bigint * 7919) % 200000,
        (g * 31) % 500,
        round(((g % 50) / 10.0)::numeric, 1)
 FROM generate_series(1, :n_products) g
