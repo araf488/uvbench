@@ -47,7 +47,7 @@ if [[ "$IMAGE_PREFIX" == */* ]]; then
 else
   log "Building images on this server (first time takes a few minutes)"
   $DC build
-  $DC pull --ignore-buildable -q
+  $DC pull --ignore-buildable --ignore-pull-failures -q
 fi
 
 log "Starting database and Redis"
