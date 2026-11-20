@@ -8,12 +8,13 @@ const START = parseInt(__ENV.START_VUS || '10', 10);
 const STEP_PCT = parseFloat(__ENV.STEP_PCT || '10');
 const STEP_MIN = parseInt(__ENV.STEP_MIN || '5', 10);
 const MAX_STEPS = parseInt(__ENV.MAX_STEPS || '60', 10);
+const MAX_VUS = parseInt(__ENV.MAX_VUS || '1500', 10);   // k6 pre-allocates every VU of a ramp: keep this within loadgen RAM
 const DURATION = __ENV.DURATION || '30m';
 const PEAK = parseInt(__ENV.PEAK_VUS || '100', 10);
 
 function ladderStages() {            // +STEP_PCT% users every STEP_MIN minutes until the break point
   const st = []; let v = START;
-  for (let i = 0; i < MAX_STEPS; i++) {
+  for (let i = 0; i < MAX_STEPS && Math.round(v) <= MAX_VUS; i++) {
     st.push({ duration: '30s', target: Math.round(v) }, { duration: `${STEP_MIN * 60 - 30}s`, target: Math.round(v) });
     v *= 1 + STEP_PCT / 100;
   }
@@ -53,4 +54,4 @@ export const options = {
   tags: { tier: __ENV.TIER || 'unknown', profile: P },
 };
 
-export default function () { mixedUser(); }
+export default async function () { await mixedUser(); }

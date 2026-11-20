@@ -3,6 +3,7 @@ import http from 'k6/http';
 import ws from 'k6/ws';
 import { check, sleep } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
+import { open as fsOpen, SeekMode } from 'k6/experimental/fs';
 
 export const BASE = __ENV.BASE_URL || 'http://127.0.0.1';
 const N_PRODUCTS = parseInt(__ENV.N_PRODUCTS || '1000000', 10);
@@ -17,10 +18,24 @@ export const aiRejected = new Counter('ai_rejected');
 export const wsMessages = new Counter('ws_messages_received');
 
 // ---- audio clips for voice requests (created by loadtest/make-audio.sh) ----
+// k6/experimental/fs keeps ONE copy of each file in memory for all VUs. (open(..., 'b') would copy every clip
+// into every VU: with thousands of pre-allocated VUs that exhausts the load generator's RAM.)
 let clips = [];
 try {
-  clips = JSON.parse(open(`${AUDIO_DIR}/clips.json`)).map((c) => ({ ...c, data: open(`${AUDIO_DIR}/${c.file}`, 'b') }));
-} catch (_) { /* voice actions are skipped when no clips exist */ }
+  const meta = JSON.parse(open(`${AUDIO_DIR}/clips.json`));
+  clips = await Promise.all(meta.map(async (c) => {
+    const f = await fsOpen(`${AUDIO_DIR}/${c.file}`);
+    return { ...c, f, size: (await f.stat()).size };
+  }));
+} catch (_) { /* voice actions fall back to text AI when no clips exist */ }
+
+async function readClip(c) {           // per-request buffer, freed after the request
+  const buf = new Uint8Array(c.size);
+  await c.f.seek(0, SeekMode.Start);
+  let off = 0;
+  while (off < c.size) { const n = await c.f.read(buf.subarray(off)); if (n === null) break; off += n; }
+  return buf.buffer;
+}
 
 const rand = (n) => 1 + Math.floor(Math.random() * n);
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -101,10 +116,11 @@ export function aiChat() {
 export function aiAsk() {
   recordAi(http.post(`${BASE}/api/ai/ask`, JSON.stringify({ question: pick(QUESTIONS) }), aiParams('ai_ask')), 'ai_ask'); think();
 }
-export function voice() {
+export async function voice() {
   if (!clips.length) { aiAsk(); return; }
   const c = pick(clips);
-  const res = http.post(`${BASE}/api/ai/voice`, { file: http.file(c.data, c.file, 'audio/wav') },
+  const data = await readClip(c);
+  const res = http.post(`${BASE}/api/ai/voice`, { file: http.file(data, c.file, 'audio/wav') },
     { tags: { name: 'ai_voice', kind: 'ai', lang: c.lang }, timeout: '180s' });
   recordAi(res, 'ai_voice');
   if (res.status === 200) voiceRoundTrip.add(res.timings.duration, { lang: c.lang });
@@ -120,7 +136,7 @@ const MIX = [
   [3, voice],                                                               //  3% voice
 ];
 const TOTAL = MIX.reduce((s, [w]) => s + w, 0);
-export function mixedUser() {
+export async function mixedUser() {
   let r = Math.random() * TOTAL;
   for (const [w, fn] of MIX) { if ((r -= w) < 0) return fn(); }
 }

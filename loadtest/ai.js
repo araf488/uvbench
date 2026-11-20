@@ -20,4 +20,4 @@ export const options = {
   tags: { tier: __ENV.TIER || 'unknown', profile: `ai-${KIND}` },
 };
 
-export default function () { fn(); }
+export default async function () { await fn(); }

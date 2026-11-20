@@ -14,6 +14,10 @@ if ! command -v k6 >/dev/null; then
 fi
 k6 version
 
+log "Installing node exporter (load generator CPU/RAM in Grafana)"
+apt-get install -y -q prometheus-node-exporter >/dev/null
+systemctl enable --now prometheus-node-exporter
+
 log "Installing kit to /opt/uvbench"
 mkdir -p /opt/uvbench && cp -a "$KIT_DIR"/. /opt/uvbench/ 2>/dev/null || true
 
