@@ -1,3 +1,6 @@
+-- Clean slate first: a failed earlier attempt may have consumed id sequences.
+TRUNCATE users, products, orders, order_items, chat_messages, ai_requests RESTART IDENTITY CASCADE;
+
 -- Synthetic seed data. Run by scripts/seed.sh, which passes:
 --   psql -v n_users=100000 -v n_products=1000000 -v n_orders=500000 -f seed.sql
 
