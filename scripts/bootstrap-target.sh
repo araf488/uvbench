@@ -54,7 +54,11 @@ log "Starting database and Redis"
 $DC up -d db redis
 for i in $(seq 60); do $DC exec -T db pg_isready -U bench -d bench >/dev/null 2>&1 && break; sleep 2; done
 
-if [ "$($DC exec -T db psql -U bench -d bench -tAc 'SELECT count(*) FROM products')" -lt "$SEED_PRODUCTS" ]; then
+# seeded = product #1 exists, full product count, and every order has its items (a half-finished seed fails this)
+SEEDED=$($DC exec -T db psql -U bench -d bench -tAc \
+  "SELECT (SELECT count(*) FROM products) >= $SEED_PRODUCTS AND EXISTS (SELECT 1 FROM products WHERE id = 1)
+          AND (SELECT count(*) FROM order_items) >= $SEED_ORDERS")
+if [ "$SEEDED" != "t" ]; then
   log "Seeding database ($SEED_USERS users, $SEED_PRODUCTS products, $SEED_ORDERS orders)"
   time $DC exec -T db psql -U bench -d bench -v ON_ERROR_STOP=1 -q \
     -v n_users="$SEED_USERS" -v n_products="$SEED_PRODUCTS" -v n_orders="$SEED_ORDERS" -f /seed/seed.sql
