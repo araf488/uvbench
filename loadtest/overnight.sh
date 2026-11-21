@@ -4,7 +4,8 @@
 # 1. waits for any k6 test already running (e.g. the mixed ladder)
 # 2. web/API-only ladder (AI off)            -> non-AI break point
 # 3. AI-only concurrency: ask, then voice      -> AI throughput per concurrency
-# 4. starts 24/7 continuous diurnal load at 70% of the mixed break point (+ spike timer)
+# 4. reference tier (8c): starts 24/7 continuous diurnal load at 70% of the mixed break point (+ spike timer)
+#    other tiers: 24 h soak at 70% of their mixed break point (the 24/7 load on 8c keeps running alongside)
 set -uo pipefail
 TIER=${1:?tier}; TARGET=${2:?target private ip}
 R=/opt/uvbench/loadtest/run.sh
@@ -14,7 +15,8 @@ latest() { ls -t "$RES"/*-"$1".json 2>/dev/null | head -1; }
 maxvus() { jq -r '.metrics.vus.max // .metrics.vus_max.max // 0' "$1" 2>/dev/null; }
 
 echo "[$(ts)] overnight chain for $TIER ($TARGET)"
-while pgrep -x k6 >/dev/null; do sleep 60; done
+# wait only for tests aimed at THIS target (the 24/7 load on another tier may run forever)
+while pgrep -af "k6 run" | grep -q "BASE_URL=http://$TARGET "; do sleep 60; done
 echo "[$(ts)] no k6 running, starting chain"
 
 MIXED_JSON=$(latest ladder)
@@ -31,6 +33,11 @@ for kind in ask voice; do
 done
 
 PEAK=$(( MIXED_BREAK * 70 / 100 )); [ "$PEAK" -lt 10 ] && PEAK=10
+if [ "$TIER" != "${REFERENCE_TIER:-8c}" ]; then
+  echo "[$(ts)] 24 h soak on $TIER at $PEAK VUs (70% of $MIXED_BREAK)"
+  bash $R "$TIER" "$TARGET" soak -e VUS=$PEAK -e DURATION=24h >/dev/null 2>&1
+  echo "[$(ts)] chain done"; exit 0
+fi
 SPIKE=$(( PEAK / 2 )); [ "$SPIKE" -lt 5 ] && SPIKE=5
 mkdir -p /etc/uvbench
 touch /etc/uvbench/loadgen.env
