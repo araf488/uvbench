@@ -19,6 +19,10 @@ echo "[$(ts)] overnight chain for $TIER ($TARGET)"
 while pgrep -af "k6 run" | grep -q "BASE_URL=http://$TARGET "; do sleep 60; done
 echo "[$(ts)] no k6 running, starting chain"
 
+if [ -z "$(latest ladder)" ]; then
+  echo "[$(ts)] mixed ladder (realistic mix incl. AI)"
+  bash $R "$TIER" "$TARGET" ladder -e START_VUS=${START_VUS:-5} -e MAX_VUS=1500 >/dev/null 2>&1
+fi
 MIXED_JSON=$(latest ladder)
 MIXED_BREAK=$( [ -n "$MIXED_JSON" ] && maxvus "$MIXED_JSON" || echo 0 )
 echo "[$(ts)] mixed ladder break point: ${MIXED_BREAK} VUs ($MIXED_JSON)"
