@@ -40,6 +40,7 @@ services:
       - ../db/init:/docker-entrypoint-initdb.d:ro
       - ../db:/seed:ro
     shm_size: 512m
+    ports: ["${PRIVATE_IP}:5432:5432"]          # app-only nodes connect over the private VPC
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bench -d bench"]
       interval: 5s
@@ -48,7 +49,8 @@ services:
   redis:
     <<: *restart
     image: redis:7.4-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "${REDIS_MAXMEM}", "--maxmemory-policy", "noeviction"]
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "${REDIS_MAXMEM}", "--maxmemory-policy", "noeviction", "--protected-mode", "no"]
+    ports: ["${PRIVATE_IP}:6379:6379"]          # private VPC only (UFW blocks the public side)
     healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, retries: 30 }
 
   api:
@@ -59,10 +61,10 @@ services:
       TIER: ${TIER}
       API_WORKERS: ${API_WORKERS}
       PG_POOL_MAX: ${PG_POOL_MAX}
-      PGHOST: db
+      PGHOST: ${PG_HOST:-db}
       PGPASSWORD: ${DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://${REDIS_HOST:-redis}:6379
       LLM_URL: http://llm:8080
       EMBED_URL: http://embed:8080
       STT_URL: http://stt:8000
@@ -174,14 +176,14 @@ services:
     <<: *restart
     image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
     environment:
-      DATA_SOURCE_NAME: postgresql://bench:${DB_PASSWORD}@db:5432/bench?sslmode=disable
+      DATA_SOURCE_NAME: postgresql://bench:${DB_PASSWORD}@${PG_HOST:-db}:5432/bench?sslmode=disable
     ports: ["${PRIVATE_IP}:9187:9187"]
     depends_on: [db]
 
   redis-exporter:
     <<: *restart
     image: oliver006/redis_exporter:v1.62.0
-    environment: { REDIS_ADDR: "redis://redis:6379" }
+    environment: { REDIS_ADDR: "redis://${REDIS_HOST:-redis}:6379" }
     ports: ["${PRIVATE_IP}:9121:9121"]
 
   nginx-exporter:

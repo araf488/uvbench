@@ -1,12 +1,14 @@
 // AI worker: consumes the ai-chat and ai-voice queues and runs the self-hosted AI pipeline.
 import http from 'node:http';
-import { readFile, writeFile, unlink, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Worker } from 'bullmq';
+import IORedis from 'ioredis';
 import { config } from './config.js';
 import { pool } from './db.js';
 import { connection, getQueues, QUEUES } from './queue.js';
+
+const store = new IORedis(config.redisUrl);   // audio in/out (shared across nodes)
 import { registry, aiStage, queueDepth } from './metrics.js';
 import { llmChat, embed, transcribe, synthesize, toPgVector } from './ai.js';
 
@@ -36,26 +38,28 @@ async function chatJob(job) {
 
 async function voiceJob(job) {
   const t0 = performance.now();
-  const inPath = path.join(config.filesDir, path.basename(job.data.file));
+  const name = path.basename(job.data.file);
+  const key = `audio:${name}`;
   try {
-    const audio = await readFile(inPath);
-    const stt = await transcribe(audio, path.basename(inPath));
+    const audio = await store.getBuffer(key);
+    if (!audio) throw new Error(`audio ${name} not found (expired?)`);
+    const stt = await transcribe(audio, name);
     const transcript = (stt.text || '').trim() || '(silence)';
     const context = await ragContext(transcript);
     const llm = await llmChat('voice', transcript, context);
     const tts = await synthesize(llm.text || 'Sorry, I have no answer.');
     const outName = `out-${randomUUID()}.wav`;
-    await writeFile(path.join(config.filesDir, outName), tts.wav);
+    await store.set(`audio:${outName}`, tts.wav, 'EX', 3600);   // served by GET /files/:name on any node
     const msTotal = Math.round(performance.now() - t0);
     aiStage.labels('voice', 'total').observe(msTotal / 1000);
     logRequest('voice', { msTotal, msStt: stt.ms, msLlm: llm.ms, msTts: tts.ms, tokens: llm.tokens });
     return {
-      transcript, language: stt.language, answer: llm.text, audioUrl: `/files/${outName}`,
+      transcript, language: stt.language, answer: llm.text, audioUrl: `/api/files/${outName}`,
       timings: { totalMs: msTotal, sttMs: stt.ms, audioSeconds: stt.duration, llmMs: llm.ms,
         firstTokenMs: llm.firstTokenMs, ttsMs: tts.ms },
     };
   } finally {
-    unlink(inPath).catch(() => {});
+    store.del(key).catch(() => {});
   }
 }
 
@@ -74,15 +78,7 @@ setInterval(async () => {
   }
 }, 5000).unref();
 
-// keep disk bounded during a 30-day run: delete generated audio older than 1 hour
-setInterval(async () => {
-  const cutoff = Date.now() - 3600_000;
-  for (const f of await readdir(config.filesDir).catch(() => [])) {
-    const p = path.join(config.filesDir, f);
-    const s = await stat(p).catch(() => null);
-    if (s && s.mtimeMs < cutoff) unlink(p).catch(() => {});
-  }
-}, 600_000).unref();
+// generated audio expires automatically in Redis (EX 3600), so nothing to clean up on disk
 
 http.createServer(async (req, res) => {
   if (req.url !== '/metrics') { res.writeHead(404).end(); return; }
@@ -90,5 +86,5 @@ http.createServer(async (req, res) => {
 }).listen(9401, '0.0.0.0');
 
 console.log(`ai worker ${process.pid}: chat x${config.chatConcurrency}, voice x${config.voiceConcurrency}`);
-const shutdown = async () => { await Promise.all(workers.map((w) => w.close())); process.exit(0); };
+const shutdown = async () => { await Promise.all(workers.map((w) => w.close())); store.disconnect(); process.exit(0); };
 process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);

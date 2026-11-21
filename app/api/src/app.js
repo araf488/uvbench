@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import Fastify from 'fastify';
 import jwt from '@fastify/jwt';
@@ -19,7 +18,6 @@ export async function buildApp() {
   await app.register(jwt, { secret: config.jwtSecret, sign: { expiresIn: '12h' } });
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
   await app.register(websocket);
-  await mkdir(config.filesDir, { recursive: true });
 
   // ---- metrics on every response ----
   app.addHook('onResponse', async (req, reply) => {
@@ -185,8 +183,17 @@ export async function buildApp() {
     if (!file) return reply.code(400).send({ error: 'audio file required (multipart field "file")' });
     const ext = path.extname(file.filename || '.wav').slice(0, 6) || '.wav';
     const name = `in-${randomUUID()}${ext}`;
-    await writeFile(path.join(config.filesDir, name), await file.toBuffer());
+    // audio lives in Redis (shared by every node), so any node's worker can process it: no shared disk needed
+    await pub.set(`audio:${name}`, await file.toBuffer(), 'EX', 900);
     return aiCall(reply, 'voice', { file: name });
+  });
+
+  // generated speech, stored in Redis by whichever node's worker produced it
+  app.get('/files/:name', async (req, reply) => {
+    const name = path.basename(req.params.name);
+    const buf = await pub.getBuffer(`audio:${name}`);
+    if (!buf) return reply.code(404).send({ error: 'expired or not found' });
+    return reply.type('audio/wav').header('cache-control', 'private, max-age=3600').send(buf);
   });
 
   app.setErrorHandler((err, req, reply) => {

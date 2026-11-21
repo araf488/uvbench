@@ -42,6 +42,9 @@ expect 200 ai-chat           -X POST "${J[@]}" -d '{"message":"hello"}' $B/ai/ch
 expect 200 ai-ask-rag        -X POST "${J[@]}" -d '{"question":"laptop warranty?"}' $B/ai/ask
 head -c 4000 /dev/urandom > "$FILES_DIR/../clip.wav"
 expect 200 ai-voice          -X POST -F "file=@$FILES_DIR/../clip.wav" $B/ai/voice
+AUDIO=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/it-body")).audioUrl.replace(/^\/api/,"")')
+expect 200 voice-audio-from-redis "$B$AUDIO"
+expect 404 voice-audio-missing    "$B/files/out-does-not-exist.wav"
 expect 400 ai-voice-no-file  -X POST "${J[@]}" -d '{}' $B/ai/voice
 node -e "
 const a=new WebSocket('ws://127.0.0.1:$PORT/ws/chat?room=ci'),b=new WebSocket('ws://127.0.0.1:$PORT/ws/chat?room=ci');
