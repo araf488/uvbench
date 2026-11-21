@@ -115,6 +115,7 @@ services:
     image: ghcr.io/ggml-org/llama.cpp:server
     command: >
       -m /models/llm/${LLM_FILE} -c ${LLM_CTX} -np ${LLM_PARALLEL} -t ${LLM_THREADS}
+      --cache-ram ${LLM_CACHE_RAM_MB}
       --host 0.0.0.0 --port 8080 --metrics --no-webui
     volumes: [../models:/models:ro]
     ports: ["${PRIVATE_IP}:8080:8080"]
