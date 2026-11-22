@@ -14,8 +14,10 @@ THREADS = int(os.getenv("STT_THREADS", str(os.cpu_count() or 1)))
 CONCURRENCY = int(os.getenv("STT_CONCURRENCY", "1"))  # transcriptions running at the same time
 LANGUAGE = os.getenv("STT_LANGUAGE") or None          # None = auto-detect (en / bn ...)
 BEAM = int(os.getenv("STT_BEAM", "1"))                # 1 = greedy (fastest)
+DEVICE = os.getenv("STT_DEVICE", "cpu")               # cpu | cuda (GPU image)
+COMPUTE = os.getenv("STT_COMPUTE", "int8" if DEVICE == "cpu" else "float16")
 
-model = WhisperModel(MODEL, device="cpu", compute_type="int8", cpu_threads=THREADS,
+model = WhisperModel(MODEL, device=DEVICE, compute_type=COMPUTE, cpu_threads=THREADS,
                      num_workers=CONCURRENCY, download_root="/models/whisper")
 slots = threading.Semaphore(CONCURRENCY)
 
@@ -31,7 +33,7 @@ app = FastAPI(title="uvbench-stt")
 
 @app.get("/health")
 def health():
-    return {"ok": True, "model": MODEL, "threads": THREADS, "concurrency": CONCURRENCY}
+    return {"ok": True, "model": MODEL, "device": DEVICE, "compute": COMPUTE, "threads": THREADS, "concurrency": CONCURRENCY}
 
 
 @app.get("/metrics")

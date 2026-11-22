@@ -8,8 +8,6 @@ require_root
 TIER="${1:?usage: bootstrap-target.sh 1c|2c|4c|8c}"
 [ -f "$KIT_DIR/tiers/$TIER.env" ] || die "unknown tier $TIER"
 cd "$KIT_DIR"
-DC="docker compose --env-file .env -f compose/docker-compose.yml"
-
 base_setup
 ufw allow 80/tcp >/dev/null
 case "$TIER" in 1c) add_swap 2 ;; 2c) add_swap 2 ;; *) add_swap 0 ;; esac
@@ -26,6 +24,8 @@ chmod 600 "$SECRETS"
 { cat tiers/common.env "tiers/$TIER.env"; echo "PRIVATE_IP=$PIP"; cat "$SECRETS"; } > .env
 chmod 600 .env
 set -a; . ./.env; set +a
+DC="docker compose --env-file .env -f compose/docker-compose.yml${COMPOSE_EXTRA:+ -f $COMPOSE_EXTRA}"
+if [ -n "${COMPOSE_EXTRA:-}" ]; then nvidia-smi >/dev/null 2>&1 || die "GPU tier: run scripts/gpu-prepare.sh first (NVIDIA driver + container toolkit)"; fi
 
 # ---- cost metric for Prometheus (node-exporter textfile collector) ----
 mkdir -p /var/lib/uvbench/textfile

@@ -68,9 +68,9 @@ jobs:
         run: for f in scripts/*.sh loadtest/*.sh app/api/test/*.sh; do bash -n "$f" || exit 1; done
       - name: Compose config (every tier)
         run: |
-          for t in 1c 2c 4c 8c; do
+          for t in 1c 2c 4c 8c gpu; do
             { cat tiers/common.env tiers/$t.env; printf 'PRIVATE_IP=10.0.0.2\nDB_PASSWORD=x\nJWT_SECRET=y\n'; } > /tmp/$t.env
-            docker compose --env-file /tmp/$t.env -f compose/docker-compose.yml config -q && echo "compose $t ok"
+            docker compose --env-file /tmp/$t.env -f compose/docker-compose.yml -f compose/docker-compose.gpu.yml config -q && echo "compose $t (+gpu) ok"
           done
       - name: Prometheus config + rules
         run: |

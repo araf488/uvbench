@@ -1,0 +1,11 @@
+# GPU build of the speech-to-text service (NVIDIA, CUDA 12 / cuDNN 9 via pip wheels, as documented by faster-whisper)
+FROM python:3.12-slim
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 STT_DEVICE=cuda
+RUN pip install faster-whisper==1.2.1 av==18.1.0 fastapi==0.165.0 uvicorn==0.54.0 python-multipart==0.0.34 \
+      prometheus-client==0.26.0 nvidia-cublas-cu12==12.9.3.13 "nvidia-cudnn-cu12==9.*"
+# make the pip-installed CUDA libraries visible to CTranslate2
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.12/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib
+WORKDIR /srv
+COPY app.py .
+EXPOSE 8000
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--limit-concurrency", "64"]
