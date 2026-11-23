@@ -4,7 +4,7 @@ import tempfile
 import threading
 import time
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
 from faster_whisper import WhisperModel
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, Histogram, generate_latest
@@ -42,7 +42,9 @@ def metrics():
 
 
 @app.post("/transcribe")
-def transcribe(file: UploadFile = File(...)):
+def transcribe(file: UploadFile = File(...), language: str | None = Form(None)):
+    # optional per-request language hint ("bn", "en"...): skips auto-detection, which is unreliable for Bangla
+    lang = (language or "").strip().lower()[:5] or LANGUAGE
     suffix = os.path.splitext(file.filename or "a.wav")[1][:6] or ".wav"
     with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
         tmp.write(file.file.read())
@@ -53,7 +55,7 @@ def transcribe(file: UploadFile = File(...)):
             BUSY.inc()
             try:
                 t0 = time.perf_counter()
-                segments, info = model.transcribe(tmp.name, language=LANGUAGE, beam_size=BEAM, vad_filter=True)
+                segments, info = model.transcribe(tmp.name, language=lang, beam_size=BEAM, vad_filter=True)
                 text = " ".join(s.text.strip() for s in segments)  # generator: decoding happens here
                 dt = time.perf_counter() - t0
             except Exception as e:  # corrupt audio etc.

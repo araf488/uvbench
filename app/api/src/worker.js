@@ -43,7 +43,7 @@ async function voiceJob(job) {
   try {
     const audio = await store.getBuffer(key);
     if (!audio) throw new Error(`audio ${name} not found (expired?)`);
-    const stt = await transcribe(audio, name);
+    const stt = await transcribe(audio, name, job.data.lang || '');
     const transcript = (stt.text || '').trim() || '(silence)';
     const context = await ragContext(transcript);
     const llm = await llmChat('voice', transcript, context);

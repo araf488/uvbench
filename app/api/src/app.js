@@ -185,7 +185,9 @@ export async function buildApp() {
     const name = `in-${randomUUID()}${ext}`;
     // audio lives in Redis (shared by every node), so any node's worker can process it: no shared disk needed
     await pub.set(`audio:${name}`, await file.toBuffer(), 'EX', 900);
-    return aiCall(reply, 'voice', { file: name });
+    // optional language hint: ?lang=bn or a form field "language" sent before the file
+    const lang = String(req.query.lang || file.fields?.language?.value || '').toLowerCase();
+    return aiCall(reply, 'voice', { file: name, ...(/^[a-z]{2,3}$/.test(lang) && { lang }) });
   });
 
   // generated speech, stored in Redis by whichever node's worker produced it

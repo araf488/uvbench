@@ -51,10 +51,11 @@ export async function embedDocuments(texts) {
 }
 
 /** Speech to text. audio = Buffer (wav/mp3/ogg/webm). */
-export async function transcribe(audio, filename = 'audio.wav') {
+export async function transcribe(audio, filename = 'audio.wav', language = '') {
   const t0 = performance.now();
   const form = new FormData();
   form.append('file', new Blob([audio]), filename);
+  if (language) form.append('language', language);
   const res = await fetch(`${config.sttUrl}/transcribe`, {
     method: 'POST', body: form, signal: AbortSignal.timeout(config.aiTimeoutMs),
   });

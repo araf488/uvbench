@@ -11,3 +11,4 @@ monitoring/prometheus/ci.yml
 monitoring/grafana/dashboards/*.json
 !monitoring/grafana/dashboards/uvbench-overview.json
 __pycache__/
+loadtest/clips/
