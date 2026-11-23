@@ -21,6 +21,8 @@ k6sum() { grep -E '^\s*(http_req_failed|http_reqs|vus_max)[ .:]' | head -3; }
 lb() { on $MON "lbctl $*"; }
 DC='docker compose --env-file .env -f compose/docker-compose.yml'
 
+# Resume after setup:  FROM=5 caffeinate -i bash .../day5-mac.sh   (skips steps 1-4, re-checks the LB, then tests)
+if [ "${FROM:-1}" -le 4 ]; then
 echo "[$(ts)] 1/9 pausing the 8c 24/7 load; stopping any old 4c test"
 on $LG "systemctl stop uvbench-spike.timer uvbench-continuous; pkill -f '[o]vernight.sh.* 4c' ; pkill -f '[T]IER=4c -e'; sleep 3; pgrep -fc 'k6 run' || true"
 
@@ -31,7 +33,7 @@ for h in $P4 $P4B; do rsync -az -e "$SSH" --exclude node_modules --exclude .next
 rsync -az -e "$SSH" "$KIT/loadtest/" root@$LG:/opt/uvbench/loadtest/
 rsync -az -e "$SSH" --exclude node_modules --exclude .next --exclude models --exclude .env \
   --exclude monitoring/.env --exclude 'monitoring/prometheus/targets/' --exclude 'monitoring/grafana/dashboards/' "$KIT/" root@$MON:/opt/uvbench/
-on $P4 "$DC build -q api stt && $DC up -d --no-deps api worker stt && sleep 15 && curl -fs http://127.0.0.1/api/health && echo"
+on $P4 "$DC build -q api stt && $DC up -d --no-deps api worker stt && $DC restart nginx && sleep 15 && curl -fs http://127.0.0.1/api/health && echo"   # nginx must re-resolve the new api container
 
 echo "[$(ts)] 3/9 setting up bench-4cb as an app node (about 10-15 min)"
 $SSH root@$P4 cat /root/.uvbench-secrets | $SSH root@$P4B "cat > /root/.uvbench-secrets && chmod 600 /root/.uvbench-secrets"
@@ -44,6 +46,16 @@ echo "[$(ts)] 4/9 load balancer (HAProxy on the monitor)"
 on $MON "bash scripts/lb-setup.sh n1=$I4 n2=$I4B && curl -fs -X POST http://127.0.0.1:9090/-/reload && echo prometheus reloaded"
 LBIP=$(on $MON "ip -4 -o addr show scope global | awk '{print \$4}' | cut -d/ -f1 | grep -E '^10\.' | head -1")
 LB="$LBIP:8090"; echo "  LB = http://$LB"
+else
+  I4B=10.12.96.8; LB=10.12.96.5:8090
+  echo "[$(ts)] resuming at step $FROM: stopping any earlier LB test, refreshing nginx on 4c"
+  on $LG "pkill -f '[T]IER=4cx2'; systemctl stop uvbench-spike.timer uvbench-continuous; sleep 3"
+  on $P4 "$DC restart nginx >/dev/null 2>&1; sleep 5; curl -fs http://127.0.0.1/api/health; echo"
+  sleep 8
+fi
+on $MON "lbctl show"
+on $MON "lbctl show" | grep -q 'n1=UP/ready' && on $MON "lbctl show" | grep -q 'n2=UP/ready' \
+  || { echo "[$(ts)] ERROR: both nodes must be UP in the load balancer - stopping. Paste this to Claude."; exit 1; }
 on $LG "for i in 1 2 3 4; do curl -fs http://$LB/api/health; echo; done"
 # log every LB state change (node up/down/drain) with a timestamp, for the report
 on $MON "pkill -f '[/]usr/local/bin/lbwatch'; nohup lbwatch > /root/lbstate.log 2>&1 < /dev/null &"
