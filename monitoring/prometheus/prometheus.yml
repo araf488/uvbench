@@ -32,5 +32,7 @@ scrape_configs:
     file_sd_configs: [{ files: [/etc/prometheus/targets/*-stt.json] }]
   - job_name: tts
     file_sd_configs: [{ files: [/etc/prometheus/targets/*-tts.json] }]
+  - job_name: haproxy
+    file_sd_configs: [{ files: [/etc/prometheus/targets/*-haproxy.json] }]
   - job_name: loadgen
     file_sd_configs: [{ files: [/etc/prometheus/targets/loadgen-node.json] }]

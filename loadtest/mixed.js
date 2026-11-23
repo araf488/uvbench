@@ -51,7 +51,7 @@ export const options = {
     'ai_first_token_ms': ['p(95)<5000'],
     'voice_round_trip_ms': ['p(95)<15000'],
   },
-  tags: { tier: __ENV.TIER || 'unknown', profile: P },
+  tags: { tier: __ENV.TIER || 'unknown', profile: __ENV.TAGPROFILE || P },
 };
 
 export default async function () { await mixedUser(); }
