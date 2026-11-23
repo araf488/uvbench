@@ -17,7 +17,7 @@ export const options = {
     [`ai_total_ms{concurrency:${n}}`, ['p(95)<60000']],
     [`http_reqs{concurrency:${n}}`, ['count>=0']],
   ])),
-  tags: { tier: __ENV.TIER || 'unknown', profile: `ai-${KIND}` },
+  tags: { tier: __ENV.TIER || 'unknown', profile: __ENV.TAGPROFILE ? `ai-${KIND}-${__ENV.TAGPROFILE}` : `ai-${KIND}` },
 };
 
 export default async function () { await fn(); }
