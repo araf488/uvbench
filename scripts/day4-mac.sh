@@ -11,7 +11,7 @@ KIT=$(cd "$(dirname "$0")/.." && pwd)
 ts() { date -u +%H:%M:%SZ; }
 s8() { ssh -o ServerAliveInterval=30 root@$P8 "cd /opt/uvbench && $*"; }
 slg() { ssh -o ServerAliveInterval=30 root@$LG "$*"; }
-ai() { slg "bash /opt/uvbench/loadtest/run.sh 8c $I8 ai -e KIND=$1 -e LEVELS=1,2,4,8 -e STEP_MIN=4 -e TAGPROFILE=$2 2>&1 | grep -E 'ai_total_ms|voice_round_trip|http_req_failed' | head -4"; }
+ai() { slg "bash /opt/uvbench/loadtest/run.sh 8c $I8 ai -e KIND=$1 -e LEVELS=1,2,4,8 -e STEP_MIN=4 -e TAGPROFILE=$2 2>&1 | grep -E '^ *(ai_total_ms|http_req_failed)[^{]*:' | head -4"; }
 acc() { slg "python3 /opt/uvbench/loadtest/stt-accuracy.py $I8 $1 2>&1 | tail -10"; }
 
 echo "[$(ts)] 1/6 pausing 24/7 load on the 8c"
