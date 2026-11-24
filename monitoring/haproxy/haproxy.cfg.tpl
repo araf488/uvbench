@@ -6,12 +6,15 @@ global
 
 defaults
   mode http
-  log stdout format raw local0 notice
+  log stdout format raw local0 info
+  option httplog
+  option dontlog-normal        # log only failed requests (5xx, timeouts, aborts)
   option http-keep-alive
   timeout connect 3s
   timeout client 130s          # AI answers and voice uploads can take a while
   timeout server 130s
   timeout http-request 10s
+  timeout queue 30s            # never answer 503 just because a node is briefly full
   timeout tunnel 1h            # chat WebSockets
   retries 2
   option redispatch            # a failed connection is retried on the other node
@@ -31,5 +34,5 @@ backend nodes
   balance leastconn
   option httpchk GET /api/health
   http-check expect status 200
-  default-server inter 2s fall 2 rise 2 maxconn 3000 on-marked-down shutdown-sessions
+  default-server inter 2s fall 2 rise 2 on-marked-down shutdown-sessions
 __NODES__
