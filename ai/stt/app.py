@@ -9,7 +9,7 @@ from fastapi.responses import PlainTextResponse
 from faster_whisper import WhisperModel
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, Histogram, generate_latest
 
-MODEL = os.getenv("WHISPER_MODEL", "base")            # tiny | base | small | medium
+MODEL = os.getenv("WHISPER_MODEL", "base")            # tiny|base|small|medium|large-v3|turbo, or a Hugging Face CT2 repo id
 THREADS = int(os.getenv("STT_THREADS", str(os.cpu_count() or 1)))
 CONCURRENCY = int(os.getenv("STT_CONCURRENCY", "1"))  # transcriptions running at the same time
 LANGUAGE = os.getenv("STT_LANGUAGE") or None          # None = auto-detect (en / bn ...)
@@ -33,7 +33,7 @@ app = FastAPI(title="uvbench-stt")
 
 @app.get("/health")
 def health():
-    return {"ok": True, "model": MODEL, "device": DEVICE, "compute": COMPUTE, "threads": THREADS, "concurrency": CONCURRENCY}
+    return {"ok": True, "model": MODEL, "device": DEVICE, "compute": COMPUTE, "threads": THREADS, "concurrency": CONCURRENCY, "beam": BEAM}
 
 
 @app.get("/metrics")

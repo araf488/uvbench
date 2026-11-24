@@ -140,6 +140,7 @@ services:
       STT_THREADS: ${STT_THREADS}
       STT_CONCURRENCY: ${STT_CONCURRENCY}
       STT_LANGUAGE: ${STT_LANGUAGE}
+      STT_BEAM: ${STT_BEAM:-1}
       HF_HUB_DISABLE_TELEMETRY: "1"
     volumes: [../models:/models]
     ports: ["${PRIVATE_IP}:8001:8000"]
