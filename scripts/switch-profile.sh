@@ -19,6 +19,7 @@ esac
 set -a; . ./.env; set +a
 DC="docker compose --env-file .env -f compose/docker-compose.yml${COMPOSE_EXTRA:+ -f $COMPOSE_EXTRA}"
 $DC up -d llm stt worker
+$DC restart nginx >/dev/null 2>&1 || true   # api may have been recreated too: nginx must re-resolve it
 PIP=$PRIVATE_IP
 for u in "8080/health" "8001/health"; do for i in $(seq 120); do curl -fs "http://$PIP:$u" >/dev/null && break; sleep 5; done; done
 echo "profile=$P llm=$LLM_FILE whisper=$WHISPER_MODEL stt_concurrency=$STT_CONCURRENCY"
