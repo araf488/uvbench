@@ -62,13 +62,23 @@ export async function buildApp() {
     return product;
   });
 
-  app.get('/search', async (req) => {
+  app.get('/search', async (req, reply) => {
     const q = String(req.query.q ?? '').slice(0, 100);
     if (!q) return { items: [] };
+    // Day 5 finding: a search scans and sorts every matching product (~66 ms, ~100k rows) and was ~all of the
+    // database CPU. Results are cached in Redis (shared by every node) for SEARCH_CACHE_SEC seconds; 0 = off.
+    const ttl = config.searchCacheSec;
+    const key = `search:${q.toLowerCase().trim()}`;
+    if (ttl > 0) {
+      const hit = await pub.get(key).catch(() => null);
+      if (hit) { reply.header('x-cache', 'hit'); return JSON.parse(hit); }
+    }
     const { rows } = await pool.query(
       `SELECT id, name, category, price_cents, rating FROM products
        WHERE search @@ plainto_tsquery('english', $1) ORDER BY rating DESC, id LIMIT 20`, [q]);
-    return { items: rows };
+    const body = { items: rows };
+    if (ttl > 0) pub.set(key, JSON.stringify(body), 'EX', ttl).catch(() => {});
+    return body;
   });
 
   // ---- orders (write, transactional) ----

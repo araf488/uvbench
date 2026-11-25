@@ -18,6 +18,7 @@ export const config = {
   ttsUrl: env('TTS_URL', 'http://tts:8000'),
   llmMaxTokens: int('LLM_MAX_TOKENS', '150'),
   aiQueueLimit: int('AI_QUEUE_LIMIT', '50'),       // back-pressure: reject AI jobs beyond this backlog (HTTP 503)
+  searchCacheSec: int('SEARCH_CACHE_SEC', '0'),  // cache search results in Redis (seconds, 0 = off)
   aiTimeoutMs: int('AI_TIMEOUT_MS', '120000'),
   chatConcurrency: int('AI_CHAT_CONCURRENCY', '2'),
   voiceConcurrency: int('AI_VOICE_CONCURRENCY', '1'),

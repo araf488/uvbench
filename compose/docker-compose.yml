@@ -71,6 +71,7 @@ services:
       TTS_URL: http://tts:8000
       LLM_MAX_TOKENS: ${LLM_MAX_TOKENS}
       AI_QUEUE_LIMIT: ${AI_QUEUE_LIMIT}
+      SEARCH_CACHE_SEC: ${SEARCH_CACHE_SEC:-0}
       AI_CHAT_CONCURRENCY: ${AI_CHAT_CONCURRENCY}
       AI_VOICE_CONCURRENCY: ${AI_VOICE_CONCURRENCY}
     volumes: [files:/data/files]
