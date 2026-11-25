@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Day 6: GPU server (NVIDIA A16). Runs ON THE LOAD GENERATOR, unattended, about 4.5 hours, then leaves a soak running.
+# Day 6: GPU server (NVIDIA A16). Runs ON THE LOAD GENERATOR, unattended, about 4 hours. Works inside the private network
+# or, in another region, over the public IP with a firewall that admits only the load generator and the monitor.
 #   systemd-run --unit uvbench-day6 --collect bash -c "cd /opt/uvbench && bash scripts/day6.sh <gpu-public-ip> > /root/day6.log 2>&1"
 #  1. GPU driver + container toolkit, full app setup (gpu tier)     2. speech-to-text accuracy + speed, English + Bangla
 #     for Whisper base / small / medium / large-v3 / large-v3-turbo / a Bangla fine-tuned model (your recordings)
 #  3. AI capacity: Qwen 1.5B and Qwen 7B, typed + voice, 1 -> 16 at once   4. Bangla typed chat samples (1.5B vs 7B)
-#  5. mixed users ladder (compare 1x8c ~50, 2x4c ~75)   6. starts a steady soak until the Day 7 cut-off
+#  5. mixed users ladder (compare 1x8c ~50, 2x4c ~75)
 # The 8c 24/7 load keeps running (AI tests put little load on the load generator).
 set -uo pipefail
 PG=${1:?usage: day6.sh <gpu-public-ip>}; MON=45.77.187.211
@@ -22,7 +23,8 @@ setstt() {   # setstt <model> [beam]
 }
 
 echo "[$(ts)] 1/6 preparing the GPU server"
-until $SSH -o ConnectTimeout=5 root@$PG true 2>/dev/null; do echo "  waiting for ssh..."; sleep 15; done
+for i in $(seq 120); do $SSH -o ConnectTimeout=5 root@$PG true 2>/dev/null && break; echo "  waiting for ssh..."; sleep 15; done
+$SSH -o ConnectTimeout=5 root@$PG true 2>/dev/null || { echo "[$(ts)] ERROR: GPU server not reachable after 30 min - stopping (delete it in Vultr)"; exit 1; }
 rsync -az -e "$SSH" --exclude node_modules --exclude .next --exclude models --exclude .env --exclude 'loadtest/clips/' /opt/uvbench/ root@$PG:/opt/uvbench/
 on $PG "bash scripts/gpu-prepare.sh 2>&1 | tail -8"
 if ! on $PG "nvidia-smi -L"; then
@@ -30,9 +32,18 @@ if ! on $PG "nvidia-smi -L"; then
   until $SSH -o ConnectTimeout=5 root@$PG true 2>/dev/null; do sleep 15; done
   on $PG "bash scripts/gpu-prepare.sh 2>&1 | tail -8"; on $PG "nvidia-smi -L" || { echo "[$(ts)] ERROR: no usable GPU driver - stopping"; exit 1; }
 fi
-on $PG "bash scripts/bootstrap-target.sh gpu 2>&1 | grep -vE 'Pulling|Downloading|Extracting|Waiting|Verifying|#[0-9]+ |Building|Built' | tail -25"
-IG=$(on $PG "ip -4 -o addr show scope global | awk '{print \$4}' | cut -d/ -f1 | grep -E '^10\.' | head -1")
-echo "  GPU private IP: $IG"
+# Outside the private network (another region): the app listens on the public IP, firewalled to LG + monitor only
+PUBMODE=0; on $PG "ip -4 -o addr show scope global | grep -q ' 10\\.'" || PUBMODE=1
+if [ $PUBMODE = 1 ]; then
+  echo "  no private network here: public-IP mode, only the load generator and the monitor may connect"
+  on $PG "bash scripts/public-firewall.sh 149.28.199.74 $MON | tail -4"
+  BOOT="PRIVATE_IP=$PG bash scripts/bootstrap-target.sh gpu"
+else BOOT="bash scripts/bootstrap-target.sh gpu"; fi
+on $PG "$BOOT 2>&1 | grep -vE 'Pulling|Downloading|Extracting|Waiting|Verifying|#[0-9]+ |Building|Built' | tail -25"
+if [ $PUBMODE = 1 ]; then IG=$PG; else
+  IG=$(on $PG "ip -4 -o addr show scope global | awk '{print \$4}' | cut -d/ -f1 | grep -E '^10\.' | head -1"); fi
+echo "  GPU address used for tests: $IG"
+curl -fs -m 10 http://$IG/api/health >/dev/null || { echo "[$(ts)] ERROR: app not reachable at $IG - stopping"; exit 1; }
 on $MON "bash scripts/monitor-add-target.sh gpu $IG"
 on $PG "nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader; bash scripts/hwbench.sh 2>&1 | tail -6"
 # GPU utilisation log for the report (every 5 s)
@@ -83,6 +94,4 @@ ev "gpu mixed ladder end"
 echo "GPU use during the tests (avg / max %):"
 on $PG "awk -F', ' '{gsub(/ %/,\"\",\$2); s+=\$2; n++; if (\$2>m) m=\$2} END {printf \"  %.0f / %.0f  (%d samples)\n\", s/n, m, n}' /root/gpu-util.csv"
 
-echo "[$(ts)] 6/6 steady soak on the GPU server: 40 mixed users, 18 h (until the Day 7 cut-off; keeps the GPU day within budget)"
-systemd-run --unit uvbench-gpu-soak --collect bash $R gpu $IG soak -e VUS=40 -e DURATION=18h -e TAGPROFILE=gpu-soak >/dev/null
 echo "[$(ts)] Day 6 done."
